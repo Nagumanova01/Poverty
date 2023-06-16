@@ -1,0 +1,879 @@
+---
+title: "Poverty report"
+author: "Карина :)"
+date: "10.12.2022"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+    fig_width: 14
+    fig_height: 11
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Предварительный анализ данных
+
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(vroom)
+library(readxl)
+library(emoGG)
+library(GGally)
+library(psych)
+library(psych)
+library(nortest)
+library(qqplotr)
+library(reshape)
+library(ppcor)
+library(car)
+library(lm.beta)
+library(ellipse)
+library(vegan)
+library(olsrr)
+
+```
+
+Считываем данные.
+```{r, message=FALSE, warning=FALSE}
+excel_sheets("D:/data/nov/poverty.xls")
+dataf <- read_excel("D:/data/nov/poverty.xls", sheet="Sheet1")
+
+```
+
+Посмотрим на структуру и первые строчки.
+
+```{r, message=FALSE, warning=FALSE}
+head(dataf)
+dim(dataf)
+
+```
+
+Это данные по различным показателям уровня жизни для 97 стран. Оставим только один столбец с названием страны, пропуск значения заменен на NA. Группа - это фактор.
+
+```{r, message=FALSE, warning=FALSE}
+datafm <- dataf[ , -9]
+names(datafm)[1] <- "COUNTRY"
+datafm$GROUP <- as.factor(datafm$GROUP)
+head(datafm)
+```
+
+**COUNTRY** - название страны
+
+**BIRTH** - рождаемость на 1000 человек населения
+
+**DEAH** - смертность на 1000 населения
+
+**INF_DEAH** - младенческая смертность в возрасте до 1 года на 1000 населения
+
+**LIFE_M** - продолжительность жизни мужчин
+
+**LIFE_F** - продолжительность жизни женщин
+
+**GNP** - валовой национальный продукт на душу населения в долларах США
+
+**GROUP** - группа страны (в какой части мира находится)
+
+
+Построим pairs plot.
+```{r, message=FALSE, warning=FALSE}
+ggpairs(datafm, columns = 2:8, diag = list(continuous = "barDiag"))
+
+```
+
+
+Есть сильно несимметричные распределения и есть неоднородности (видны несколько облаков точек). Категоризующая переменная, объясняющая эту неоднородность - часть мира, в которой расположена страна. Прологарифмируем GNP  и раскрасим по группам. Снова строим pairs plot.
+
+
+```{r, message=FALSE, warning=FALSE}
+datafm$GNP <- log(datafm$GNP)
+ggpairs(datafm, columns = 2:8, aes(color = GROUP, alpha = 0.6), diag = list(continuous = "barDiag"))
+
+```
+
+
+Зависимости стали более линейными, а распределения более симметричными.
+
+
+Разделяем на группы.
+
+```{r, message=FALSE, warning=FALSE}
+data1 <- datafm %>% filter(GROUP == "EAST_E")
+data2 <- datafm %>% filter(GROUP == "SOU_A")
+data3 <- datafm %>% filter(GROUP == "WEST_E_A")
+data4 <- datafm %>% filter(GROUP == "ASIA")
+data5 <- datafm %>% filter(GROUP == "MID_EAST")
+data6 <- datafm %>% filter(GROUP == "AFRICA")
+
+data7<-data
+
+```
+
+
+Посмотрим на **descriptive statistics**. Она показывает основные характеристики распределений по группам. У этой функции следующие значения:
+
+**mean** - среднее,
+
+**sd** - стандартное отклонение,
+
+**median** - медиана,
+
+**trimmed** - усеченное среднее,
+
+**mad** - среднее абсолютное отклонение от медианы,
+
+**min** - минимум,
+
+**max** - максимум,
+
+**range** - размах (разница между максимумом и минимумом),
+
+**skew** - асиммерия,
+
+**kurtosis** - эксцесс,  
+
+**se** - стандартная ошибка.
+
+
+Посмотрим на группу AFRICA, в которой 27 стран. 
+
+Коэффициент асимметрии для рождаемости равен -0.94. Значит распределение сильно скошено вправо (также это понятно из того, что среднее меньше медианы). Минимум расположен далеко от среднего, так как это значение маловероятно. Оно находится на расстоянии больше, чем 2 сигма (13.43 > 2*5.69). А вероятность быть на расстоянии от мат.ожидания больше двух сигм равна всего 0.046. Эксцесс равен -0.15, значит пик более пологий, а хвосты тяжелее, чем у нормального распределения.
+
+
+```{r, message=FALSE, warning=FALSE}
+data_fm <- datafm[ , -1]
+data_fm <- data_fm[ , -7]
+describeBy(data_fm, datafm$GROUP)
+
+```
+
+
+Минимумы и максимумы, какие конкретно страны.
+
+**EAST_E**
+
+*Рождаемость*
+
+Венгрия  11.6  Албания  24.7 
+
+*Смертность*
+
+Албания  5.7  Венгрия  13.4 
+
+*Смертность младенцев*
+
+Неизвестная страна (FORMER_E)  7.6  Албания  30.8 
+
+*Продолжительность жизни мужчин*
+
+СССР   64.6  Чехия  71.8
+
+*Продолжительность жизни женщин*
+
+Румыния   72.4  Чехия     77.7  
+
+*ВНП*
+
+Албания  1.86  Чехия    2.08
+
+---
+
+**SOU_A**
+
+*Рождаемость*
+
+Уругвай  18 Боливия  46.6 
+
+*Смертность*
+
+Венесуэла  4.4 Мексика    23.2 
+
+*Смертность младенцев*
+
+Чили     17.1   Боливия  111 
+
+*Продолжительность жизни мужчин*
+
+Боливия  51 Уругвай  68.4
+
+*Продолжительность жизни женщин*
+
+Боливия   55.4  Чили      75.1  
+
+*ВНП*
+
+Албания  1.76   Чехия    2.07
+
+---
+
+**WEST_E_A**
+
+*Рождаемость*
+
+Италия  9.7 США     16.7 
+
+*Смертность*
+
+Япония  6.7     Дания   11.9 
+
+*Смертность младенцев*
+
+Япония      4.5   Португалия  13.1
+
+*Продолжительность жизни мужчин*
+
+Греция  64.4  Япония  75.9
+
+*Продолжительность жизни женщин*
+
+Португалия  72.4  Япония      81.8  
+
+*ВНП*
+
+Греция     2.16  Финляндия  2.32
+
+---
+
+**ASIA**
+
+*Рождаемость*
+
+Гонконг     11.7  Бангладеш   42.2 
+
+
+*Смертность*
+
+Гонконг     4.9  Афганистан  18.7 
+
+*Смертность младенцев*
+
+Гонконг     6.1  Афганистан  182
+
+
+*Продолжительность жизни мужчин*
+
+Афганистан  41 Гонконг     74.3
+
+*Продолжительность жизни женщин*
+
+Афганистан  42  Гонконг     80.1
+
+*ВНП*
+
+Монголия   1.55 Гонконг    2.26
+
+---
+
+**MID_EAST**
+
+*Рождаемость*
+
+Израиль  22.3 Оман     45.6 
+
+*Смертность*
+
+Кувейт  2.2   Иран    11.5 
+
+*Смертность младенцев*
+
+Израиль   9.7  Иран      108
+
+*Продолжительность жизни мужчин*
+
+Иран      55.8 Израиль   73.9
+
+*Продолжительность жизни женщин*
+
+Афганистан  55 Гонконг     77.4
+
+*ВНП*
+
+Иордания  1.96  Неизвестная страна (UNITED_A)  2.29
+
+---
+
+**AFRICA**
+
+*Рождаемость*
+
+Тунис  31.1  Гана   44.4 
+
+*Смертность*
+
+Тунис    7.3  Намибия  12.1 
+
+*Смертность младенцев*
+
+Египет   49.4  Ливия    82
+
+*Продолжительность жизни мужчин*
+
+Малави    38.1 Нигерия   48.8
+
+*Продолжительность жизни женщин*
+
+Малави    41.2Нигерия   52.2
+
+*ВНП*
+
+Мозамбик  1.48  Нигерия   1.77
+
+
+# О виде распределений и о сравнении распределений
+
+Выясним, близки ли распределения к нормальным. Будем анализировать вид распределений признаков по группам, разделяем по частям мира.
+
+## Normal probability plot.
+
+```{r, message=FALSE, warning=FALSE}
+
+df_new <- datafm %>% 
+  as.data.frame(datafm) %>% 
+  melt(id.vars = c("COUNTRY", "GROUP"))
+
+df1_new <- data1 %>% 
+  as.data.frame(data1) %>% 
+  melt(id.vars = c("COUNTRY", "GROUP"))
+df2_new <- data2 %>% 
+  as.data.frame(data2) %>% 
+  melt(id.vars = c("COUNTRY", "GROUP"))
+df3_new <- data3 %>% 
+  as.data.frame(data3) %>% 
+  melt(id.vars = c("COUNTRY", "GROUP"))
+df4_new <- data4 %>% 
+  as.data.frame(data4) %>% 
+  melt(id.vars = c("COUNTRY", "GROUP"))
+df5_new <- data5 %>% 
+  as.data.frame(data5) %>% 
+  melt(id.vars = c("COUNTRY", "GROUP"))
+df6_new <- data6 %>% 
+  as.data.frame(data6) %>% 
+  melt(id.vars = c("COUNTRY", "GROUP"))
+
+```
+
+Отклонения от прямой линии указывают на отклонения от нормальности.
+
+Далее будем сравнивать распределения признаков у SOU_A и MID_EAST, поэтому построим для них normal probability plot.
+
+Видим, что у распределений Рождаемости, Смертности младенцев для группы MID_EAST хвосты более легкие, чем у нормального распределения. (Отличием от тяжелых является направление отклонения от прямой линии для нескольких первых и нескольких последних точек. Для легких хвостов первые несколько точек показывают отклонение от линии над линией, а последние несколько точек показывают отклонение от прямой линии под линией. Для тяжелых хвостов эта схема обратная.)
+
+Normal probability plot для MID_EAST.
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(df5_new, aes(sample = value)) +
+        stat_qq_point(size = 2) +
+        facet_wrap(~variable, scales = "free") +
+        labs(x = "", y = "") +
+        stat_qq_line(color = "darkorchid4")+
+        ggtitle("Normal probability plot MID_EAST")
+```
+
+Normal probability plot для SOU_A.
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(df2_new, aes(sample = value)) +
+        stat_qq_point(size = 2) +
+        facet_wrap(~variable, scales = "free") +
+        labs(x = "", y = "") +
+        stat_qq_line(color = "darkorchid4")+
+        ggtitle("Normal probability plot SOU_A")
+
+```
+
+Распределения похожи на нормальные.
+
+## PP-plot.
+
+То есть опять используем графический метод для оценки того, следует ли набор данных заданному распределению (нормальному).
+
+Отклонения от прямой линии указывают на отклонения от нормального распределения.
+
+PP-plot для SOU_A.
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(df2_new, aes(sample = value)) +
+        stat_pp_point(size = 2) +
+        facet_wrap(~variable, scales = "free") +
+        labs(x = "", y = "") +
+        stat_pp_line(color = "blue")+
+        ggtitle("PP-plot MID_EAST")
+```
+
+
+PP-plot для MID_EAST.
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(df5_new, aes(sample = value)) +
+        stat_pp_point(size = 2) +
+        facet_wrap(~variable, scales = "free") +
+        labs(x = "", y = "") +
+        stat_pp_line(color = "blue")+
+        ggtitle("PP-plot MID_EAST")
+```
+
+Распределения похожи на нормальные.
+
+## Проверка на нормальность по критериям.
+
+Будем рассматривать отдельно по группам, в какой части мира расположена страна. Проверяем по критериям Лиллиефорса (модификация критерия Колмогорова-Смирнова), Андерсона-Даринга (критерий типа омега-квадрат, придает хвостам больший вес, чем тест KS), критерий хи-квадрат Пирсона для сложной гипотезы нормальности, Шапиро-Уилка (примерно квадрат корреляции между x и y в normal probability ploy).
+
+
+Не будем проводить тесты для всех признаков всех групп. Рассматривается по 2 группы для признаков Рождаемость, Смертность младенцев, Продолжительность жизни мужчин.
+
+### Рождаемость
+
+**WEST_E_A**
+
+```{r, message=FALSE, warning=FALSE}
+
+lillie.test(data3$BIRTH)
+ad.test(data3$BIRTH)
+pearson.test(data3$BIRTH)
+shapiro.test(data3$BIRTH)
+
+```
+
+Гипотеза не отвергается при стандартных уровнях значимости.
+
+**SOU_A**
+
+```{r, message=FALSE, warning=FALSE}
+
+lillie.test(data2$BIRTH)
+ad.test(data2$BIRTH)
+pearson.test(data2$BIRTH)
+shapiro.test(data2$BIRTH)
+```
+
+При уровне значимостии 0.05 гипотеза отвергается по критерию хи-квадрат и не отвергается по остальным критериям.
+
+
+### Смертность младенцев
+
+**SOU_A**
+
+```{r, message=FALSE, warning=FALSE}
+
+lillie.test(data2$INF_DEAH)
+ad.test(data2$INF_DEAH)
+pearson.test(data2$INF_DEAH)
+shapiro.test(data2$INF_DEAH)
+```
+
+При уровне значимостии 0.05 гипотеза отвергается по критерию Шапиро-Уилка и не отвергается по остальным критериям.
+
+
+**MID_EAST**
+
+```{r, message=FALSE, warning=FALSE}
+
+lillie.test(data5$INF_DEAH)
+ad.test(data5$INF_DEAH)
+pearson.test(data5$INF_DEAH)
+shapiro.test(data5$INF_DEAH)
+
+```
+
+Гипотеза не отвергается при стандартных уровнях значимости.
+
+### Продолжительность жизни мужчин
+
+**SOU_A**
+
+```{r, message=FALSE, warning=FALSE}
+
+lillie.test(data2$LIFE_M)
+ad.test(data2$LIFE_M)
+pearson.test(data2$LIFE_M)
+shapiro.test(data2$LIFE_M)
+```
+
+Гипотеза не отвергается при стандартных уровнях значимости.
+
+**MID_EAST**
+
+```{r, message=FALSE, warning=FALSE}
+
+lillie.test(data5$LIFE_M)
+ad.test(data5$LIFE_M)
+pearson.test(data5$LIFE_M)
+shapiro.test(data5$LIFE_M)
+
+```
+
+Гипотеза не отвергается при стандартных уровнях значимости.
+
+Как по результатам проверки на нормальность прикинуть, значения асимметрии и эксцесса были около нуля
+или существенными? Если гипотеза о нормальности отвергается, то значения асимметрии и эксцесса можно считать существенными.
+
+## Ящики с усами.
+Сравненим распределения в группах с помощью ящиков с усами.
+
+```{r, message=FALSE, warning=FALSE}
+
+cols <- c("#7edecc", "#79c4db", "#aede81", "#ded17e", "#8d76e8", "#de7eb6")
+          
+
+ggplot(datafm, aes(x = GROUP, y = BIRTH, fill = GROUP)) + 
+  stat_boxplot(geom = "errorbar",
+               width = 0.25) + 
+  geom_boxplot(alpha = 0.8,          
+               colour = "#474747",
+               outlier.colour = 1) + 
+  scale_fill_manual(values = cols) +
+  ggtitle("Рождаемость")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+ggplot(datafm, aes(x = GROUP, y = DEATH, fill = GROUP)) + 
+  stat_boxplot(geom = "errorbar",
+               width = 0.25) + 
+  geom_boxplot(alpha = 0.8,          
+               colour = "#474747",
+               outlier.colour = 1) + 
+  scale_fill_manual(values = cols) +
+  ggtitle("Смертность")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+ggplot(datafm, aes(x = GROUP, y = INF_DEAH, fill = GROUP)) + 
+  stat_boxplot(geom = "errorbar",
+               width = 0.25) + 
+  geom_boxplot(alpha = 0.8,          
+               colour = "#474747",
+               outlier.colour = 1) + 
+  scale_fill_manual(values = cols) +
+  ggtitle("Смертность младенцев")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+ggplot(datafm, aes(x = GROUP, y = LIFE_M, fill = GROUP)) + 
+  stat_boxplot(geom = "errorbar",
+               width = 0.25) + 
+  geom_boxplot(alpha = 0.8,          
+               colour = "#474747",
+               outlier.colour = 1) + 
+  scale_fill_manual(values = cols) +
+  ggtitle("Продолжительность жизни мужчин")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+ggplot(datafm, aes(x = GROUP, y = LIFE_F, fill = GROUP)) + 
+  stat_boxplot(geom = "errorbar",
+               width = 0.25) + 
+  geom_boxplot(alpha = 0.8,          
+               colour = "#474747",
+               outlier.colour = 1) + 
+  scale_fill_manual(values = cols) +
+  ggtitle("Продолжительность жизни женщин")
+
+
+```
+
+## t-критерий.
+
+### Смертность младенцев.
+
+Сначала проверим гипотезу о равенстве дисперсий для двух распределений. Рассматриваем Смертность младенцев для SOU_A и MID_EAST.
+
+Критерий Фишера можно использовать только для нормальных распределений, а один из тестов отверг гипотезу о нормальности Смертности младенцев в SOU_A, поэтому будем использовать критерий Левена.
+
+```{r, message=FALSE, warning=FALSE}
+
+data25 <- datafm %>% filter(GROUP == "SOU_A" | GROUP == "MID_EAST" )
+leveneTest(INF_DEAH ~ GROUP, data25, center = "mean")
+
+```
+
+Гипотеза не отвергается при стандартных уровнях значимости. Но нельзя считать, что дисперсии равны.
+
+Будем использовать двухвыборочный t-критерий для независимых выборок с равными дисперсиями и с различными дисперсиями, критерий асимптотический. t-критерий точный, когда данные нормальные. 
+
+Если бы был сбалансированный дизайн, то не важно равны дисперсии или нет. (Но он не сбалансирован, разные объемы выборки).
+
+```{r, message=FALSE, warning=FALSE}
+
+t.test(data2$INF_DEAH, data5$INF_DEAH, var.equal=TRUE)
+t.test(data2$INF_DEAH, data5$INF_DEAH, var.equal=FALSE)
+
+```
+
+Гипотезы о равенстве математических ожиданий не отвергается при стандартных уровнях значимости.
+
+### Продолжительность жизни мужчин.
+
+Аналогично посмотрим на другой признак - Продолжительность жизни мужчин.
+
+Сначала проверяем гипотезу о равенсте дисперсий. Здесь можно использовать критерий Фишера.
+
+```{r, message=FALSE, warning=FALSE}
+
+var.test(data2$LIFE_M, data5$LIFE_M)
+
+```
+
+Гипотеза не отвергается при стандартных уровнях значимости.
+
+Будем использовать двухвыборочный t-критерий для независимых выборок с равными и различными дисперсиями.
+
+```{r, message=FALSE, warning=FALSE}
+
+t.test(data2$LIFE_M, data5$LIFE_M, var.equal=TRUE)
+t.test(data2$LIFE_M, data5$LIFE_M, var.equal=FALSE)
+
+```
+Гипотезы о равенстве математических ожиданий не отвергается при стандартных уровнях значимости.
+
+## Критерий Вилкоксона.
+
+Критерий Вилкоксона непараметрический. Хорош тем, что можно использовать при малых объемах выборки и робастностью (свойство статистического метода, характеризующее независимость влияния выбросов на результат исследования). 
+
+Плох тем, что у него мощность меньше, чем у t-критерия.
+
+У нас очень маленькие объемы выборки. Для SOU_A - это 12 индивидов, для MID_EAST - 11 индивидов. Используем критерий Вилкоксона.
+
+```{r, message=FALSE, warning=FALSE}
+
+wilcox.test(data2$INF_DEAH, data5$INF_DEAH)
+wilcox.test(data2$LIFE_M, data5$LIFE_M)
+
+```
+
+Гипотезы не отвергаются при стандартных уровнях значимости.
+
+Гипотеза о том, что P(кси1 > кси2) = P(кси1 < кси2). t-критерий, но примененный к рангам.
+
+## Критерий Колмогорова Смирнова.
+
+С помощью критерия Колмогорова-Смирнова можно сравнивать распределения в целом (умеет сравнивать формы распределений).
+
+
+```{r, message=FALSE, warning=FALSE}
+
+ks.test(data2$INF_DEAH, data5$INF_DEAH)
+ks.test(data2$LIFE_M, data5$LIFE_M)
+
+```
+Гипотезы о равенстве распределений не отвергаются при стандартных уровнях значимости.
+
+# Об анализе зависимостей
+
+У нас неоднородные данные, будем изучать зависимости только внутри групп по-отдельности. Построим сначала pairs plot для группы AFRICA. 
+
+Коэффициент корреляции Спирмана не реагирует на монотонные преобразования и почти не реагирует на выбросы. Посмотрим на смертность и продолжительность жизни мужчин, видим, что есть выброс. Значит, коэффициент корреляции Спирмана должен быть больше, чем коэффициент корреляции Пирсона. Проверим это, построив соответствующие матрицы. 
+
+```{r, message=FALSE, warning=FALSE}
+
+ggpairs(data6, columns = 2:8, diag = list(continuous = "barDiag"))
+
+```
+
+Матрица корреляций Пирсона
+
+```{r, message=FALSE, warning=FALSE}
+
+dplyr::select(data6, -COUNTRY, -GROUP) %>%
+cor(method = "pearson", use = "pairwise.complete.obs") %>%
+melt() %>%
+ggplot(aes(X1, X2)) +
+  geom_raster(aes(fill = value)) +
+  geom_text(aes(label = round(value, 3))) +
+  scale_fill_gradient2(low=colors()[555], mid=colors()[1], high=colors()[26]) + 
+  ggtitle("Pearson AFRICA") +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1))
+
+```
+
+Коэффициент корреляции Пирсона для смертности и продолжительности жизни мужчин равен -0.935.
+
+Матрица корреляций Спирмана
+
+```{r, message=FALSE, warning=FALSE}
+
+dplyr::select(data6, -COUNTRY, -GROUP) %>%
+cor(method = "spearman", use = "pairwise.complete.obs") %>%
+melt() %>%
+ggplot(aes(X1, X2)) +
+  geom_raster(aes(fill = value)) +
+  geom_text(aes(label = round(value, 3))) +
+  scale_fill_gradient2(low=colors()[555], mid=colors()[1], high=colors()[26]) + 
+  ggtitle("Spearman AFRICA") +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1))
+
+```
+
+Коэффициент корреляции Спирмана для смертности и продолжительности жизни мужчин равен -0.951.
+
+Для нормальных распределений коэффициенты Пирсона и Спирмана примерно равны.
+
+Видим достаточно большую корреляцию между продолжительностью жизни (и мужчин, и женщин) и ВНП. Что является причиной, а что следствием? Наверно, чем больше ВНП страны на душу населения, тем больше будет продолжительности жизни людей в этой стране.
+
+Посмотрим на частную корреляцию между Рождаемостью и Смертностью за вычетом ВНП.
+
+```{r, message=FALSE, warning=FALSE}
+
+(data6 %>%
+    dplyr::select(BIRTH, DEATH, GNP) %>%
+    pcor(method = "pearson"))$estimate["BIRTH", "DEATH"]
+
+```
+
+Частная корреляция 0.3536 между ними меньше, чем обычная корреляция 0.609.
+
+Посмотрим на частную корреляцию между Продолжительностью жизни мужчин и ВНП за вычетом Смертности.
+
+```{r, message=FALSE, warning=FALSE}
+
+(data6 %>%
+    dplyr::select(LIFE_M, GNP, DEATH) %>%
+    pcor(method = "pearson"))$estimate["LIFE_M", "GNP"]
+
+```
+
+Частная корреляция 0.02495 между ними сильно меньше, чем обычная корреляция 0.658.
+
+# Линейная регрессия
+
+```{r, message=FALSE, warning=FALSE}
+#data1 <- datafm %>% filter(GROUP == "EAST_E")
+data_asia_mid_east <- datafm %>% filter((GROUP == "ASIA")|(GROUP == "MID_EAST"))
+data_africa <- datafm %>% filter(GROUP == "AFRICA")
+
+#head(data_asia_mid_east)
+```
+
+```{r, message=FALSE, warning=FALSE}
+ggpairs(data_asia_mid_east, columns = 2:8, diag = list(continuous = "barDiag"))
+```
+
+```{r, message=FALSE, warning=FALSE}
+ggpairs(data_africa, columns = 2:8, diag = list(continuous = "barDiag"))
+```
+
+```{r, message=FALSE, warning=FALSE}
+model_1 <- lm(formula = LIFE_M ~ BIRTH + INF_DEAH + GNP, data = data_africa)
+summary(lm.beta(model_1))
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+ellipse_1 <- ellipse(model_1, which=c(2,3), npoints=1000)
+#ellipse_1
+ggplot() + geom_point(aes(x = ellipse_1[,1], y = ellipse_1[,2]))+xlab("BIRTH")+ylab("INF_DEAH")
+```
+
+```{r, message=FALSE, warning=FALSE}
+ggcorr(data_africa, 
+       label = T, 
+       label_size = 4,
+       label_round = 2,
+       hjust = 1,
+       size = 5, 
+       color = "royalblue",
+       layout.exp = 5,
+       low = "green3", 
+       mid = "gray95", 
+       high = "darkorange",
+       name = "Correlation")
+```
+
+```{r, message=FALSE, warning=FALSE}
+ols_step_backward_p(model_1)
+#step(model_1, direction = "backward")
+```
+
+```{r, message=FALSE, warning=FALSE}
+ols_step_forward_p(model_1)
+#step(model_1, direction = "forward")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+shapiro.test(model_1$residuals)
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+ggplot(data_africa ,aes(x = model_1$fitted.values, y = model_1$residuals)) +
+  geom_point()+
+  xlab("Predicted") +
+  ylab("Residuals")
+
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+data_africaa <- data_africa[ , -1]
+data_africaa <- data_africaa[ , -7]
+
+datt <- data.frame('n' = 1:27, 'country' = data_africa$COUNTRY,
+                     'mahalanobis' = mahalanobis(data_africaa, 
+                                          colMeans(data_africaa), 
+                                          cov(data_africaa)))
+
+ggplot(datt, aes(x = n, y = mahalanobis)) + 
+  geom_point(size= 2) + 
+  xlab("n") +
+  ylab("Mahalanobis' distance")
+```
+
+```{r, message=FALSE, warning=FALSE}
+dat <- data.frame('n' = 1:27, 'country' = data_africa$COUNTRY,
+                     'cook' = cooks.distance(model_1))
+ggplot(dat, aes(x = n, y = cook)) + 
+  geom_point(size= 2) + 
+  xlab("n") + 
+  ylab("Cook's distance")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+ols_plot_resid_stud(model_1)
+ols_plot_resid_stud_fit(model_1)
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(data_frame(residuals=rstandard(model_1), studres=studres(model_1)), aes(x=residuals, y=studres))+geom_point()+ geom_abline(scope=1, intercept=0, color = "red")
+```
+
+```{r, message=FALSE, warning=FALSE}
+data_africa_new <- data_africa[ -c(11,15,19),]
+model_2 <- lm(formula = LIFE_M ~ BIRTH + INF_DEAH + GNP, data = data_africa_new)
+summary(lm.beta(model_2))
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+#new_africa <- data.frame("COUNTRY" = "Land", BIRTH = 38, DEATH = 20, #INF_DEAH = 137, LIFE_M = 60, LIFE_F=70, GNP = 700, GROUP="AFRICA")
+
+new_africa2 <- data.frame(COUNTRY = "Land", BIRTH = 38, INF_DEAH = 137, GNP = 700)
+new_africa2
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+predict(model_1, newdata = new_africa2, interval="confidence")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+predict(model_1, newdata = new_africa2, interval="prediction")
+
+```
